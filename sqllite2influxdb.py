@@ -22,6 +22,21 @@ influx_url = os.getenv("INFLUXDB_URL")
 influx_token = os.getenv("INFLUXDB_TOKEN")
 influx_org = os.getenv("INFLUXDB_ORG")
 influx_bucket = os.getenv("INFLUXDB_BUCKET")
+HA_INFLUXDB_SOURCE = os.getenv("HA_INFLUXDB_SOURCE", "HA") # Default to "HA" if not set
+logging.info(f"Using InfluxDB source '{HA_INFLUXDB_SOURCE}' from environment variable.")
+
+HA_TIMEZONE_STR = os.getenv("HA_TIMEZONE")
+HA_TIMEZONE = None
+if HA_TIMEZONE_STR:
+    try:
+        HA_TIMEZONE = pytz.timezone(HA_TIMEZONE_STR)
+        logging.info(f"Using timezone '{HA_TIMEZONE_STR}' from environment variable.")
+    except pytz.exceptions.UnknownTimeZoneError:
+        logging.error(f"Invalid timezone '{HA_TIMEZONE_STR}' specified in HA_TIMEZONE. Assuming UTC.")
+        HA_TIMEZONE = pytz.utc
+else:
+    logging.warning("HA_TIMEZONE environment variable not set. Assuming UTC (may be incorrect).")
+    HA_TIMEZONE = pytz.utc
 
 # Validate environment variables
 required_env_vars = [sqlite_db, influx_url, influx_token, influx_org, influx_bucket]
@@ -113,17 +128,19 @@ def batch_insert_to_influx(write_api, rows):
         if unit_of_measurement == '':
             unit_of_measurement = 'count'
         try:
-            # Convert timestamp from Unix epoch to datetime object
-            last_updated_dt = datetime.fromtimestamp(float(last_updated_ts))
-            # Create an InfluxDB point with tags and fields
-            point = Point(unit_of_measurement).tag("source", "HA").tag("domain", domain)
-            point.tag("entity_id", entity_id_short).tag("friendly_name", friendly_name).time(last_updated_dt)
-
-            # Add the state value as either a numerical value or a string
-            if isinstance(state, (int, float)) or (isinstance(state, str) and state.replace('.', '', 1).isdigit()):
-                point.field("value", float(state))
+            last_updated_ts_float = float(last_updated_ts)
+            if HA_TIMEZONE != pytz.utc:
+                local_dt = datetime.fromtimestamp(last_updated_ts_float)
+                local_dt_aware = HA_TIMEZONE.localize(local_dt)
+                utc_dt = local_dt_aware.astimezone(pytz.utc)
+                point.time(utc_dt)
             else:
-                point.field("state", str(state))
+                # If no timezone is provided or invalid, assume UTC (though this might be wrong)
+                utc_dt_naive = datetime.utcfromtimestamp(last_updated_ts_float)
+                point.time(utc_dt_naive.replace(tzinfo=pytz.utc))
+
+        except ValueError as e:
+            logging.warning(f"Error converting timestamp for entity {entity_id}
 
             # Add additional attributes as fields, ensuring correct type
             for key, value in attributes_json.items():
