@@ -61,8 +61,10 @@ INFLUXDB_URL=http://localhost:8086
 INFLUXDB_TOKEN=your_token
 INFLUXDB_ORG=your_organization
 INFLUXDB_BUCKET=your_bucket
-SQLITE_DB_PATH=/path/to/your/sqlite.db
+SQLITE_DB_=/path/to/your/sqlite.db
 DEBUG_MODE=false
+HA_TIMEZONE=your local timezone
+HA_INFLUXDB_SOURCE=your source name for influxdb in home assistant configuration.yaml
 ```
 
 When DEBUG_MODE is true. The script will insert into Influx point by point
